@@ -1,0 +1,18 @@
+# 安装基础编译工具和依赖
+sudo apt update
+sudo apt install -y build-essential cmake
+sudo apt install -y libglog-dev libgtest-dev libleveldb-dev libmarisa-dev libopencc-dev libmarisa-dev
+
+	
+# 1. 进入源码目录
+cd /home/mj/librime-1.16.1
+
+# 2. 删除旧的构建残留（如果有）并创建新目录
+rm -rf build
+mkdir build && cd build
+
+# 3. 手动运行 CMake
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release
+
+# 4. 开始编译（手动指定 4 核并行编译，或者直接用 make）
+make -j4
