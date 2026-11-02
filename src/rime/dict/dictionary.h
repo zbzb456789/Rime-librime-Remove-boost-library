@@ -85,6 +85,20 @@ class Dictionary : public Class<Dictionary, const Ticket&> {
                               bool predictive,
                               size_t limit = 0,
                               const hash_set<string>* blacklist = nullptr);
+  RIME_DLL size_t LookupWordsFromKeys(
+      DictEntryIterator* result,
+      const string& str_code,
+      const vector<Prism::Match>& keys,
+      size_t start_key,
+      size_t limit,
+      const hash_set<string>* blacklist = nullptr,
+      bool apply_blacklist_filter = true);
+  RIME_DLL size_t LookupWordsByMatch(
+      DictEntryIterator* result,
+      const string& str_code,
+      const Prism::Match& match,
+      const hash_set<string>* blacklist = nullptr,
+      bool apply_blacklist_filter = true);
   // translate syllable id sequence to string code
   RIME_DLL bool Decode(const Code& code, vector<string>* result);
 
@@ -97,6 +111,14 @@ class Dictionary : public Class<Dictionary, const Ticket&> {
   const an<Prism>& prism() const { return prism_; }
 
  private:
+  void LookupWordsFromMatchingKeys(
+      DictEntryIterator* result,
+      const string& str_code,
+      const Prism::Match* keys,
+      size_t count,
+      const hash_set<string>* blacklist,
+      bool apply_blacklist_filter);
+
   string name_;
   vector<string> packs_;
   vector<of<Table>> tables_;

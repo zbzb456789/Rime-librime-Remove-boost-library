@@ -93,8 +93,9 @@ class ScriptSyllabifier : public PhraseSyllabifier {
 
   virtual Spans Syllabify(const Phrase* phrase);
   size_t BuildSyllableGraph(Prism& prism);
-  string GetPreeditString(const Phrase& cand) const;
+  string GetPreeditString(const Phrase& cand) const override;
   string GetOriginalSpelling(const Phrase& cand) const;
+  string GetComment(const Phrase& cand) const override;
   bool IsCorrection(const Code& code, size_t code_length) const;
 
   const SyllableGraph& syllable_graph() const { return syllable_graph_; }
@@ -105,6 +106,7 @@ class ScriptSyllabifier : public PhraseSyllabifier {
   size_t start_;
   Syllabifier syllabifier_;
   SyllableGraph syllable_graph_;
+  mutable map<pair<const Code*, size_t>, bool> correction_cache_;
 };
 
 class ScriptTranslation : public Translation {
@@ -191,6 +193,8 @@ ScriptTranslator::ScriptTranslator(const Ticket& ticket)
       corrector_.reset(corrector->Create(ticket));
     }
   }
+  // 与 table_translator 一致：用户词典可以只查不学。
+  set_learn_user_dict(enable_user_dict_learning());
 }
 
 an<Translation> ScriptTranslator::Query(const string& input,
@@ -365,6 +369,13 @@ size_t ScriptSyllabifier::BuildSyllableGraph(Prism& prism) {
 
 bool ScriptSyllabifier::IsCorrection(const Code& code,
                                      size_t code_length) const {
+  auto key = make_pair(&code, code_length);
+  auto cached = correction_cache_.find(key);
+  if (cached != correction_cache_.end()) {
+    return cached->second;
+  }
+
+  bool result = false;
   vector<bool> path_attributes;
   path_attributes.reserve(8);
 
@@ -393,12 +404,15 @@ bool ScriptSyllabifier::IsCorrection(const Code& code,
       [&](SyllabifyTask* task, size_t depth) { path_attributes.pop_back(); }};
 
   if (syllabify_dfs(&task, 0, 0)) {
-    for (bool is_correction : path_attributes) {
-      if (is_correction)
-        return true;
+    for (bool flag : path_attributes) {
+      if (flag) {
+        result = true;
+        break;
+      }
     }
   }
-  return false;
+  correction_cache_[key] = result;
+  return result;
 }
 
 string ScriptSyllabifier::GetPreeditString(const Phrase& cand) const {
@@ -432,6 +446,18 @@ string ScriptSyllabifier::GetOriginalSpelling(const Phrase& cand) const {
   if (translator_ &&
       static_cast<int>(cand.code().size()) <= translator_->spelling_hints()) {
     return translator_->Spell(cand.code());
+  }
+  return string();
+}
+
+string ScriptSyllabifier::GetComment(const Phrase& cand) const {
+  if (!translator_) {
+    return string();
+  }
+  auto spelling = GetOriginalSpelling(cand);
+  if (!spelling.empty() &&
+      (translator_->always_show_comments() || spelling != cand.preedit())) {
+    return spelling;
   }
   return string();
 }
@@ -545,16 +571,6 @@ bool ScriptTranslation::Next() {
 an<Candidate> ScriptTranslation::Peek() {
   if (candidate_source_ == kUninitialized && !PrepareCandidate()) {
     return nullptr;
-  }
-  if (candidate_->preedit().empty()) {
-    candidate_->set_preedit(syllabifier_->GetPreeditString(*candidate_));
-  }
-  if (candidate_->comment().empty()) {
-    auto spelling = syllabifier_->GetOriginalSpelling(*candidate_);
-    if (!spelling.empty() && (translator_->always_show_comments() ||
-                              spelling != candidate_->preedit())) {
-      candidate_->set_comment(/*quote_left + */ spelling /* + quote_right*/);
-    }
   }
   candidate_->set_syllabifier(syllabifier_);
   return candidate_;

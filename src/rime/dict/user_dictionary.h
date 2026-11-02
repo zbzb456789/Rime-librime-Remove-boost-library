@@ -89,10 +89,11 @@ class UserDictionary : public Class<UserDictionary, const Ticket&> {
  protected:
   bool Initialize();
   bool FetchTickCount();
+  bool AppendSyllableToString(SyllableId syllable_id, string* result);
   bool TranslateCodeToString(const Code& code, string* result);
   void DfsLookup(const SyllableGraph& syll_graph,
                  size_t current_pos,
-                 const string& current_prefix,
+                 size_t current_prefix_length,
                  DfsState* state);
 
  private:
@@ -113,6 +114,8 @@ class UserDictionaryComponent : public UserDictionary::Component {
   UserDictionary* Create(const string& dict_name, const string& db_class);
 
  private:
+  // 弱引用：同一时刻存在多个 UserDictionary 时复用已打开的 DB；
+  // 若旧引擎已经释放全部引用，DB 会随 shared_ptr 归零而关闭。
   hash_map<string, weak<Db>> db_pool_;
 };
 

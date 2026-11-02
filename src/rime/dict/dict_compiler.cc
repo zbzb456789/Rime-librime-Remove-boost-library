@@ -8,6 +8,7 @@
 #include <cfloat>
 #include <cmath>
 #include <fstream>
+#include <string_view>
 #include <rime/algo/algebra.h>
 #include <rime/algo/utilities.h>
 #include <rime/dict/corrector.h>
@@ -77,11 +78,51 @@ static uint32_t compute_dict_file_checksum(uint32_t initial_checksum,
   return cc.Checksum();
 }
 
+static void UpdateChecksum(uint32_t* checksum, std::string_view data) {
+  for (unsigned char c : data) {
+    *checksum ^= c;
+    *checksum *= 16777619u;
+  }
+}
+
+uint32_t DictCompiler::ComputePrismConfigChecksum(const path& schema_file) {
+  Config config;
+  if (!config.LoadFromFile(schema_file)) {
+    // Preserve the old behavior for malformed or unreadable schemas.
+    return Checksum(schema_file);
+  }
+  uint32_t checksum = 2166136261u;
+  UpdateChecksum(&checksum, "rime-prism-algebra-v1");
+  auto algebra = config.GetList("speller/algebra");
+  if (!algebra) {
+    UpdateChecksum(&checksum, "none");
+    return checksum;
+  }
+  UpdateChecksum(&checksum, "list");
+  for (auto it = algebra->begin(); it != algebra->end(); ++it) {
+    auto value = As<ConfigValue>(*it);
+    if (!value) {
+      // A non-scalar algebra entry is invalid for Projection::Load; use the
+      // full schema checksum so we never skip a potentially meaningful change.
+      return Checksum(schema_file);
+    }
+    const string& formula = value->str();
+    string length = std::to_string(formula.size());
+    UpdateChecksum(&checksum, length);
+    UpdateChecksum(&checksum, ":");
+    UpdateChecksum(&checksum, formula);
+    UpdateChecksum(&checksum, ";");
+  }
+  return checksum;
+}
+
 bool DictCompiler::Compile(const path& schema_file) {
   LOG(INFO) << "compiling dictionary for " << schema_file;
+  source_files_.clear();
   bool build_table_from_source = true;
   DictSettings settings;
   auto dict_file = source_resolver_->ResolvePath(dict_name_ + ".dict.yaml");
+  source_files_.push_back(dict_file);
   if (!std::filesystem::exists(dict_file)) {
     LOG(ERROR) << "source file '" << dict_file << "' does not exist.";
     build_table_from_source = false;
@@ -94,10 +135,15 @@ bool DictCompiler::Compile(const path& schema_file) {
                                     source_resolver_.get())) {
     return false;
   }
+  source_files_.insert(source_files_.end(), dict_files.begin(), dict_files.end());
+  if (settings.use_preset_vocabulary()) {
+    source_files_.push_back(
+        PresetVocabulary::DictFilePath(settings.vocabulary()));
+  }
   uint32_t dict_file_checksum =
       compute_dict_file_checksum(0, dict_files, settings);
   uint32_t schema_file_checksum =
-      schema_file.empty() ? 0 : Checksum(schema_file);
+      schema_file.empty() ? 0 : ComputePrismConfigChecksum(schema_file);
   bool rebuild_table = false;
   bool rebuild_prism = false;
   const auto& primary_table = tables_[0];
@@ -165,6 +211,7 @@ bool DictCompiler::Compile(const path& schema_file) {
     EntryCollector collector(std::move(syllabary));
     DictSettings settings;
     auto dict_file = source_resolver_->ResolvePath(pack_name + ".dict.yaml");
+    source_files_.push_back(dict_file);
     if (!std::filesystem::exists(dict_file)) {
       if (pack_table->Exists())
         LOG(INFO) << "pack source file '" << dict_file
@@ -183,6 +230,12 @@ bool DictCompiler::Compile(const path& schema_file) {
     if (!get_dict_files_from_settings(&dict_files, settings,
                                       source_resolver_.get())) {
       continue;
+    }
+    source_files_.insert(source_files_.end(), dict_files.begin(),
+                         dict_files.end());
+    if (settings.use_preset_vocabulary()) {
+      source_files_.push_back(
+          PresetVocabulary::DictFilePath(settings.vocabulary()));
     }
     uint32_t pack_file_checksum =
         compute_dict_file_checksum(dict_file_checksum, dict_files, settings);

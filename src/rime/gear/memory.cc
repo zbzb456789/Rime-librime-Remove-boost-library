@@ -128,6 +128,8 @@ bool Memory::ProcessSegmentOnCommit(CommitEntry& commit_entry,
 void Memory::OnCommit(Context* ctx) {
   if (!user_dict_ || user_dict_->readonly())
     return;
+  if (!learn_user_dict_)
+    return;  // 只查不学：不写入用户词典，避免自动调频
   StartSession();
   CommitEntry commit_entry(this);
   for (auto& seg : ctx->composition()) {

@@ -36,6 +36,10 @@ class DictCompiler {
 
   RIME_DLL bool Compile(const path& schema_file);
   void set_options(int options) { options_ = options; }
+  const vector<path>& source_files() const { return source_files_; }
+
+  // Fingerprint only the configuration that affects prism generation.
+  static uint32_t ComputePrismConfigChecksum(const path& schema_file);
 
  private:
   bool BuildTable(int table_index,
@@ -57,6 +61,7 @@ class DictCompiler {
   an<EditDistanceCorrector> correction_;
   vector<of<Table>> tables_;
   int options_ = 0;
+  vector<path> source_files_;
   the<ResourceResolver> source_resolver_;
   the<ResourceResolver> target_resolver_;
 };

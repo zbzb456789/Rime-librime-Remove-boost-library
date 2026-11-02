@@ -26,6 +26,20 @@ constexpr auto kCrc32Table = []() consteval {
   return table;
 }();
 
+// slicing-by-8 用的 8 张派生表：tables[k][i] 等价于对状态 tables[k-1][i]
+// 再处理一个零字节。一次处理 8 字节，结果与逐字节算法完全相同。
+constexpr auto kCrc32SlicingTables = []() consteval {
+  std::array<std::array<uint32_t, 256>, 8> tables{};
+  tables[0] = kCrc32Table;
+  for (size_t k = 1; k < tables.size(); ++k) {
+    for (uint32_t i = 0; i < 256; ++i) {
+      uint32_t c = tables[k - 1][i];
+      tables[k][i] = (c >> 8) ^ tables[0][c & 0xFF];
+    }
+  }
+  return tables;
+}();
+
 }  // namespace
 
 int CompareVersionString(const string& x, const string& y) {
@@ -61,7 +75,24 @@ void ChecksumComputer::ProcessFile(const path& file_path) {
     std::streamsize bytes_read = fin.gcount();
     if (bytes_read > 0) {
       const auto* p = reinterpret_cast<const uint8_t*>(buffer.data());
-      for (std::streamsize i = 0; i < bytes_read; ++i) {
+      std::streamsize i = 0;
+      // 一次处理 8 字节（结果与逐字节相同，仅更快）
+      for (; i + 8 <= bytes_read; i += 8) {
+        uint32_t word = static_cast<uint32_t>(p[i]) |
+                        (static_cast<uint32_t>(p[i + 1]) << 8) |
+                        (static_cast<uint32_t>(p[i + 2]) << 16) |
+                        (static_cast<uint32_t>(p[i + 3]) << 24);
+        crc_ ^= word;
+        crc_ = kCrc32SlicingTables[7][crc_ & 0xFF] ^
+               kCrc32SlicingTables[6][(crc_ >> 8) & 0xFF] ^
+               kCrc32SlicingTables[5][(crc_ >> 16) & 0xFF] ^
+               kCrc32SlicingTables[4][(crc_ >> 24) & 0xFF] ^
+               kCrc32SlicingTables[3][p[i + 4]] ^
+               kCrc32SlicingTables[2][p[i + 5]] ^
+               kCrc32SlicingTables[1][p[i + 6]] ^
+               kCrc32SlicingTables[0][p[i + 7]];
+      }
+      for (; i < bytes_read; ++i) {
         crc_ = kCrc32Table[(crc_ ^ p[i]) & 0xFF] ^ (crc_ >> 8);
       }
     }

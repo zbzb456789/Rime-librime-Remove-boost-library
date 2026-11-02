@@ -12,6 +12,8 @@
 
 namespace rime {
 
+class BuildManifest;
+
 // detects changes in either user configuration or upgraded shared data
 class DetectModifications : public DeploymentTask {
  public:
@@ -50,10 +52,14 @@ class RIME_DLL SchemaUpdate : public DeploymentTask {
   SchemaUpdate(TaskInitializer arg);
   bool Run(Deployer* deployer);
   void set_verbose(bool verbose) { verbose_ = verbose; }
+  void set_manifest(BuildManifest* manifest) { manifest_ = manifest; }
+  void set_force_config_update(bool force) { force_config_update_ = force; }
 
  protected:
   path source_path_;
   bool verbose_ = false;
+  BuildManifest* manifest_ = nullptr;
+  bool force_config_update_ = false;
 };
 
 // update a specific config file
@@ -63,10 +69,12 @@ class ConfigFileUpdate : public DeploymentTask {
       : file_name_(file_name), version_key_(version_key) {}
   ConfigFileUpdate(TaskInitializer arg);
   bool Run(Deployer* deployer);
+  void set_force_rebuild(bool force) { force_rebuild_ = force; }
 
  protected:
   string file_name_;
   string version_key_;
+  bool force_rebuild_ = false;
 };
 
 // for installer

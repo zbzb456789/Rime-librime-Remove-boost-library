@@ -55,6 +55,7 @@ bool Projection::Load(an<ConfigList> settings) {
   if (!settings)
     return false;
   calculation_.clear();
+  apply_cache_.clear();
   Calculus calc;
   bool success = true;
   for (size_t i = 0; i < settings->size(); ++i) {
@@ -88,6 +89,14 @@ bool Projection::Load(an<ConfigList> settings) {
 bool Projection::Apply(string* value) {
   if (!value || value->empty())
     return false;
+  auto cached = apply_cache_.find(*value);
+  if (cached != apply_cache_.end()) {
+    if (cached->second.first) {
+      *value = cached->second.second;
+    }
+    return cached->second.first;
+  }
+  const string original = *value;
   bool modified = false;
   Spelling s(*value);
   for (an<Calculation>& x : calculation_) {
@@ -101,6 +110,10 @@ bool Projection::Apply(string* value) {
   }
   if (modified)
     value->assign(s.str);
+  if (apply_cache_.size() >= 256) {
+    apply_cache_.clear();
+  }
+  apply_cache_.emplace(original, make_pair(modified, modified ? *value : string()));
   return modified;
 }
 

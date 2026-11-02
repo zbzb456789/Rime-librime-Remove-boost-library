@@ -19,6 +19,8 @@ class CoinageSymbolProcessor : public Processor {
   bool EntryExists(const std::string& path, const std::string& text);
   std::string GenerateWubiCode(const std::string& text);
   bool AppendEntry(const std::string& text, const std::string& code, int weight);
+  // 把新词写进 librime 用户词典，写入即生效（跨平台，无需部署）
+  bool MemorizeEntry(const std::string& text, const std::string& code);
   
   // UTF-8 分字工具
   std::vector<std::string> SplitUTF8(const std::string& str);

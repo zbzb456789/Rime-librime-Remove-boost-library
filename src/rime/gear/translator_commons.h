@@ -54,6 +54,10 @@ class PhraseSyllabifier {
   virtual ~PhraseSyllabifier() = default;
 
   virtual Spans Syllabify(const Phrase* phrase) = 0;
+  virtual string GetPreeditString(const Phrase& phrase) const {
+    return string();
+  }
+  virtual string GetComment(const Phrase& phrase) const { return string(); }
 };
 
 //
@@ -69,10 +73,32 @@ class Phrase : public Candidate {
          const an<DictEntry>& entry)
       : Candidate(type, start, end), language_(language), entry_(entry) {}
   const string& text() const { return entry_->text; }
-  string comment() const { return entry_->comment; }
-  string preedit() const { return entry_->preedit; }
-  void set_comment(const string& comment) { entry_->comment = comment; }
-  void set_preedit(const string& preedit) { entry_->preedit = preedit; }
+  string comment() const override {
+    if (!comment_cached_) {
+      comment_cached_ = true;
+      if (entry_->comment.empty() && syllabifier_) {
+        entry_->comment = syllabifier_->GetComment(*this);
+      }
+    }
+    return entry_->comment;
+  }
+  string preedit() const override {
+    if (!preedit_cached_) {
+      preedit_cached_ = true;
+      if (entry_->preedit.empty() && syllabifier_) {
+        entry_->preedit = syllabifier_->GetPreeditString(*this);
+      }
+    }
+    return entry_->preedit;
+  }
+  void set_comment(const string& comment) {
+    entry_->comment = comment;
+    comment_cached_ = true;
+  }
+  void set_preedit(const string& preedit) {
+    entry_->preedit = preedit;
+    preedit_cached_ = true;
+  }
   void set_syllabifier(an<PhraseSyllabifier> syllabifier) {
     syllabifier_ = syllabifier;
   }
@@ -107,6 +133,8 @@ class Phrase : public Candidate {
   const Language* language_;
   an<DictEntry> entry_;
   an<PhraseSyllabifier> syllabifier_;
+  mutable bool preedit_cached_ = false;
+  mutable bool comment_cached_ = false;
 };
 
 //
@@ -161,6 +189,14 @@ class TranslatorOptions {
   }
   bool enable_completion() const { return enable_completion_; }
   void set_enable_completion(bool enabled) { enable_completion_ = enabled; }
+  // 是否把选中的候选写回用户词典。false 表示用户词典只读不学，
+  // 关掉自动调频。
+  bool enable_user_dict_learning() const {
+    return enable_user_dict_learning_;
+  }
+  void set_enable_user_dict_learning(bool enabled) {
+    enable_user_dict_learning_ = enabled;
+  }
   bool strict_spelling() const { return strict_spelling_; }
   void set_strict_spelling(bool is_strict) { strict_spelling_ = is_strict; }
   double initial_quality() const { return initial_quality_; }
@@ -174,6 +210,7 @@ class TranslatorOptions {
   vector<string> tags_{"abc"};  // invariant: non-empty
   bool contextual_suggestions_ = false;
   bool enable_completion_ = true;
+  bool enable_user_dict_learning_ = true;
   bool strict_spelling_ = false;
   double initial_quality_ = 0.;
   Projection preedit_formatter_;

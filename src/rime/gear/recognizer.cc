@@ -24,7 +24,7 @@ static void load_patterns(RecognizerPatterns* patterns, an<ConfigMap> map) {
     if (!value)
       continue;
     try {
-      std::regex pattern(value->str());
+      std::regex pattern(value->str(), std::regex::optimize);
       (*patterns)[it->first] = pattern;
     } catch (std::regex_error& e) {
       LOG(ERROR) << "error parsing pattern /" << value->str()
@@ -91,8 +91,10 @@ ProcessResult Recognizer::ProcessKeyEvent(const KeyEvent& key_event) {
   if ((use_space_ && ch == ' ') || (ch > 0x20 && ch < 0x80)) {
     // pattern matching against the input string plus the incoming character
     Context* ctx = engine_->context();
-    string input = ctx->input();
-    input += ch;
+    string input;
+    input.reserve(ctx->input().length() + 1);
+    input = ctx->input();
+    input.push_back(static_cast<char>(ch));
     auto match = patterns_.GetMatch(input, ctx->composition());
     if (match.found()) {
       ctx->PushInput(ch);

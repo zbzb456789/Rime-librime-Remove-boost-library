@@ -46,20 +46,26 @@ Preedit Composition::GetPreedit(const string& full_input,
     } else {  // highlighted
       preedit.sel_start = preedit.text.length();
       preedit.sel_end = string::npos;
-      if (cand && !cand->preedit().empty()) {
-        end = cand->end();
-        auto caret_placeholder = cand->preedit().find('\t');
-        if (caret_placeholder != string::npos) {
-          preedit.text += cand->preedit().substr(0, caret_placeholder);
-          // the part after caret is considered prompt string,
-          // show it only when the caret is at the end of input.
-          if (caret_pos == end && end == full_input.length()) {
-            preedit.sel_end = preedit.sel_start + caret_placeholder;
-            preedit.caret_pos = preedit.sel_end;
-            preedit.text += cand->preedit().substr(caret_placeholder + 1);
+      if (cand) {
+        string candidate_preedit = cand->preedit();
+        if (!candidate_preedit.empty()) {
+          end = cand->end();
+          auto caret_placeholder = candidate_preedit.find('\t');
+          if (caret_placeholder != string::npos) {
+            preedit.text += candidate_preedit.substr(0, caret_placeholder);
+            // the part after caret is considered prompt string,
+            // show it only when the caret is at the end of input.
+            if (caret_pos == end && end == full_input.length()) {
+              preedit.sel_end = preedit.sel_start + caret_placeholder;
+              preedit.caret_pos = preedit.sel_end;
+              preedit.text += candidate_preedit.substr(caret_placeholder + 1);
+            }
+          } else {
+            preedit.text += candidate_preedit;
           }
         } else {
-          preedit.text += cand->preedit();
+          end = at(i).end;
+          preedit.text += input_.substr(start, end - start);
         }
       } else {
         end = at(i).end;
@@ -129,12 +135,16 @@ string Composition::GetScriptText(bool keep_selection) const {
     if (keep_selection && cand && !cand->text().empty() &&
         seg.status >= Segment::kSelected) {
       result += cand->text();
-    } else if (cand && !cand->preedit().empty()) {
+    } else if (cand) {
       string preedit = cand->preedit();
-      if (size_t pos = preedit.find('\t'); pos != string::npos) {
-        preedit.erase(pos, 1);
+      if (!preedit.empty()) {
+        if (size_t pos = preedit.find('\t'); pos != string::npos) {
+          preedit.erase(pos, 1);
+        }
+        result += preedit;
+      } else if (!seg.HasTag("phony")) {
+        result += input_.substr(start, end - start);
       }
-      result += preedit;
     } else if (!seg.HasTag("phony")) {
       result += input_.substr(start, end - start);
     }

@@ -104,11 +104,11 @@ bool TableQuery::Advance(SyllableId syllable_id,
   if (!Walk(syllable_id)) {
     return false;
   }
+  syllable_ids_[level_] = syllable_id;
+  credibility_[level_] = credibility_sum() + credibility;
+  quality_len_[level_] = quality_len_sum() + quality_len;
+  last_pos_[level_] = last_pos;
   ++level_;
-  index_code_.push_back(syllable_id);
-  credibility_.push_back(credibility_sum() + credibility);
-  quality_len_.push_back(quality_len_sum() + quality_len);
-  last_pos_.push_back(last_pos);
   return true;
 }
 
@@ -116,21 +116,11 @@ bool TableQuery::Backdate() {
   if (level_ == 0)
     return false;
   --level_;
-  if (index_code_.size() > level_) {
-    index_code_.pop_back();
-    credibility_.pop_back();
-    quality_len_.pop_back();
-    last_pos_.pop_back();
-  }
   return true;
 }
 
 void TableQuery::Reset() {
   level_ = 0;
-  index_code_.clear();
-  credibility_.clear();
-  quality_len_.clear();
-  last_pos_.clear();
 }
 
 static table::TrunkIndexNode* find_node(table::TrunkIndexNode* first,
@@ -175,23 +165,34 @@ bool TableQuery::Walk(SyllableId syllable_id) {
   return true;
 }
 
-inline static Code add_syllable(Code code, SyllableId syllable_id) {
-  code.push_back(syllable_id);
-  return code;
-}
-
 TableAccessor TableQuery::Access(SyllableId syllable_id,
                                  double credibility,
                                  double quality_len) const {
   credibility += credibility_sum();
   quality_len += quality_len_sum();
+  // 先查表，命中之后才拼索引码：绝大多数探测都是不存在的路径，
+  // 之前每次都会白分配一个 Code 向量。
+  const auto build_index_code = [this, syllable_id]() {
+    Code index_code;
+    if (level_ < Code::kIndexCodeMaxLength) {
+      index_code.reserve(level_ + 1);
+      index_code.insert(index_code.end(), syllable_ids_.begin(),
+                        syllable_ids_.begin() + level_);
+      index_code.push_back(syllable_id);
+    } else {
+      index_code.reserve(level_);
+      index_code.insert(index_code.end(), syllable_ids_.begin(),
+                        syllable_ids_.begin() + level_);
+    }
+    return index_code;
+  };
   if (level_ == 0) {
     if (!lv1_index_ || syllable_id < 0 ||
         syllable_id >= static_cast<SyllableId>(lv1_index_->size))
       return TableAccessor();
     auto node = &lv1_index_->at[syllable_id];
-    return TableAccessor(add_syllable(index_code_, syllable_id), &node->entries,
-                         credibility, quality_len);
+    return TableAccessor(build_index_code(), &node->entries, credibility,
+                         quality_len);
   } else if (level_ == 1 || level_ == 2) {
     auto index = (level_ == 1) ? lv2_index_ : lv3_index_;
     if (!index)
@@ -199,12 +200,13 @@ TableAccessor TableQuery::Access(SyllableId syllable_id,
     auto node = find_node(index->begin(), index->end(), syllable_id);
     if (node == index->end())
       return TableAccessor();
-    return TableAccessor(add_syllable(index_code_, syllable_id), &node->entries,
-                         credibility, quality_len);
+    return TableAccessor(build_index_code(), &node->entries, credibility,
+                         quality_len);
   } else if (level_ == 3) {
     if (!lv4_index_)
       return TableAccessor();
-    return TableAccessor(index_code_, lv4_index_, credibility, quality_len);
+    return TableAccessor(build_index_code(), lv4_index_, credibility,
+                         quality_len);
   }
   return TableAccessor();
 }

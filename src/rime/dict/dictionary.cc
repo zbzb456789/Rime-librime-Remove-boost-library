@@ -5,6 +5,7 @@
 // 2011-07-05 GONG Chen <chen.sst@gmail.com>
 //
 #include <filesystem>
+#include <array>
 #include <rime/algo/syllabifier.h>
 #include <rime/common.h>
 #include <rime/dict/dictionary.h>
@@ -314,8 +315,57 @@ size_t Dictionary::LookupWords(DictEntryIterator* result,
     }
   }
   DLOG(INFO) << "found " << keys.size() << " matching keys thru the prism.";
-  size_t code_length(str_code.length());
-  for (auto& match : keys) {
+  return LookupWordsFromKeys(result, str_code, keys, 0, keys.size(), blacklist,
+                             true);
+}
+
+size_t Dictionary::LookupWordsFromKeys(
+    DictEntryIterator* result,
+    const string& str_code,
+    const vector<Prism::Match>& keys,
+    size_t start_key,
+    size_t limit,
+    const hash_set<string>* blacklist,
+    bool apply_blacklist_filter) {
+  DLOG(INFO) << "lookup: " << str_code << ", keys[" << start_key << ", "
+             << (start_key + limit) << ")";
+  if (!loaded() || !result) {
+    return 0;
+  }
+  size_t end_key = start_key + limit;
+  if (end_key > keys.size()) {
+    end_key = keys.size();
+  }
+  LookupWordsFromMatchingKeys(result, str_code, keys.data() + start_key,
+                              end_key - start_key, blacklist,
+                              apply_blacklist_filter);
+  return end_key - start_key;
+}
+
+size_t Dictionary::LookupWordsByMatch(
+    DictEntryIterator* result,
+    const string& str_code,
+    const Prism::Match& match,
+    const hash_set<string>* blacklist,
+    bool apply_blacklist_filter) {
+  if (!loaded() || !result) {
+    return 0;
+  }
+  LookupWordsFromMatchingKeys(result, str_code, &match, 1, blacklist,
+                              apply_blacklist_filter);
+  return 1;
+}
+
+void Dictionary::LookupWordsFromMatchingKeys(
+    DictEntryIterator* result,
+    const string& str_code,
+    const Prism::Match* keys,
+    size_t count,
+    const hash_set<string>* blacklist,
+    bool apply_blacklist_filter) {
+  size_t code_length = str_code.length();
+  for (size_t key_index = 0; key_index < count; ++key_index) {
+    const auto& match = keys[key_index];
     SpellingAccessor accessor(prism_->QuerySpelling(match.value));
     while (!accessor.exhausted()) {
       SyllableId syllable_id = accessor.syllable_id();
@@ -340,12 +390,11 @@ size_t Dictionary::LookupWords(DictEntryIterator* result,
       }
     }
   }
-  if (blacklist && !blacklist->empty()) {
+  if (apply_blacklist_filter && blacklist && !blacklist->empty()) {
     result->AddFilter([blacklist](an<DictEntry> entry) {
       return entry && !blacklist->count(entry->text);
     });
   }
-  return keys.size();
 }
 
 bool Dictionary::Decode(const Code& code, vector<string>* result) {

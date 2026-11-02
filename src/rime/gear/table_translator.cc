@@ -136,6 +136,8 @@ class LazyTableTranslation : public TableTranslation {
   size_t limit_;
   size_t user_dict_limit_;
   string user_dict_key_;
+  vector<Prism::Match> table_keys_;
+  size_t processed_table_keys_ = 0;
 };
 
 LazyTableTranslation::LazyTableTranslation(TableTranslator* translator,
@@ -187,22 +189,32 @@ bool LazyTableTranslation::FetchMoreUserPhrases() {
 }
 
 bool LazyTableTranslation::FetchMoreTableEntries() {
-  if (!dict_ || limit_ == 0)
+  if (!dict_ || limit_ == 0) {
     return false;
-  size_t previous_entry_count = iter_.entry_count();
-  DLOG(INFO) << "fetching more table entries: limit = " << limit_
-             << ", count = " << previous_entry_count;
-  DictEntryIterator more;
-  if (dict_->LookupWords(&more, input_, true, limit_, blacklist_) < limit_) {
-    DLOG(INFO) << "all table entries obtained.";
-    limit_ = 0;  // no more try
-  } else {
-    limit_ *= kExpandingFactor;
   }
-  if (more.entry_count() > previous_entry_count) {
-    more.Skip(previous_entry_count);
-    iter_ = std::move(more);
+  if (processed_table_keys_ >= table_keys_.size()) {
+    size_t resume_key = table_keys_.size();
+    vector<Prism::Match> keys;
+    dict_->prism()->ExpandSearch(input_, &keys, limit_);
+    if (keys.size() < limit_) {
+      DLOG(INFO) << "all table keys obtained.";
+      limit_ = 0;  // no more try
+    } else {
+      limit_ *= kExpandingFactor;
+    }
+    table_keys_ = std::move(keys);
+    processed_table_keys_ = resume_key;
   }
+  size_t start_key = processed_table_keys_;
+  size_t remaining = table_keys_.size() - start_key;
+  if (remaining == 0) {
+    return false;
+  }
+  DLOG(INFO) << "fetching more table entries: keys [" << start_key << ", "
+             << table_keys_.size() << ")";
+  dict_->LookupWordsFromKeys(&iter_, input_, table_keys_, start_key, remaining,
+                             blacklist_, start_key == 0);
+  processed_table_keys_ = table_keys_.size();
   return true;
 }
 
@@ -232,6 +244,9 @@ TableTranslator::TableTranslator(const Ticket& ticket)
     encoder_.reset(new UnityTableEncoder(user_dict_.get()));
     encoder_->Load(ticket);
   }
+  // 允许方案把「用户词典查询」和「选词学习」分开：关掉学习后，
+  // 用户词典仍然会被查询（手动词条照旧优先出现），但不会再自动调频。
+  set_learn_user_dict(enable_user_dict_learning());
 }
 
 static bool starts_with_completion(an<Translation> translation) {
@@ -639,7 +654,7 @@ an<Translation> TableTranslator::MakeSentence(const string& input,
     }
     if (dict_ && dict_->loaded()) {
       vector<Prism::Match> matches;
-      dict_->prism()->CommonPrefixSearch(input.substr(start_pos), &matches);
+      dict_->prism()->CommonPrefixSearch(active_input, &matches);
       if (matches.empty())
         continue;
       for (const auto& m : std::views::reverse(matches)) {
@@ -652,8 +667,8 @@ an<Translation> TableTranslator::MakeSentence(const string& input,
         if (homographs.size() >= max_homographs_)
           continue;
         DictEntryIterator iter;
-        dict_->LookupWords(&iter, active_input.substr(0, m.length), false, 0,
-                           &blacklist());
+        dict_->LookupWordsByMatch(&iter, active_input.substr(0, m.length), m,
+                                  &blacklist());
         if (filter_by_charset) {
           iter.AddFilter(CharsetFilter::FilterDictEntry);
         }

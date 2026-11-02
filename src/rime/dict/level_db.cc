@@ -41,6 +41,14 @@ struct LevelDbCursor {
     return true;
   }
 
+  bool Jump(std::string_view key) {
+    if (!iterator) {
+      return false;
+    }
+    iterator->Seek(leveldb::Slice(key.data(), key.size()));
+    return true;
+  }
+
   void Release() {
     delete iterator;
     iterator = nullptr;
@@ -115,6 +123,10 @@ bool LevelDbAccessor::Reset() {
 }
 
 bool LevelDbAccessor::Jump(const string& key) {
+  return cursor_->Jump(key);
+}
+
+bool LevelDbAccessor::JumpView(std::string_view key) {
   return cursor_->Jump(key);
 }
 

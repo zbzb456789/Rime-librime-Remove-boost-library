@@ -24,6 +24,7 @@ class LevelDbAccessor : public DbAccessor {
 
   bool Reset() override;
   bool Jump(const string& key) override;
+  bool JumpView(std::string_view key) override;
   bool GetNextRecord(string* key, string* value) override;
   bool exhausted() override;
 

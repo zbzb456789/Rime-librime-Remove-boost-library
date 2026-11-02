@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <string_view>
 #include <rime/common.h>
 #include <rime/language.h>
 #include <rime/schema.h>
@@ -49,14 +50,18 @@ struct DfsState {
   an<DbAccessor> accessor;
   string key;
   string value;
+  string prefix;
 
   size_t depth() const { return code.size(); }
 
-  bool IsExactMatch(const string& prefix) {
-    return key.starts_with(prefix + '\t');
+  bool IsExactMatch(std::string_view prefix) {
+    return key.size() > prefix.size() &&
+           key.compare(0, prefix.size(), prefix.data(), prefix.size()) == 0 &&
+           key[prefix.size()] == '\t';
   }
-  bool IsPrefixMatch(const string& prefix) {
-    return key.starts_with(prefix);
+  bool IsPrefixMatch(std::string_view prefix) {
+    return key.size() >= prefix.size() &&
+           key.compare(0, prefix.size(), prefix.data(), prefix.size()) == 0;
   }
   void RecruitEntry(size_t pos,
                     hash_map<string, SyllableId>* syllabary = nullptr);
@@ -68,16 +73,16 @@ struct DfsState {
     }
     return true;
   }
-  bool ForwardScan(const string& prefix) {
-    if (!accessor->Jump(prefix)) {
+  bool ForwardScan(std::string_view prefix) {
+    if (!accessor->JumpView(prefix)) {
       return false;
     }
     return NextEntry();
   }
-  bool Backdate(const string& prefix) {
-    DLOG(INFO) << "backdate; prefix: " << prefix;
+  bool Backdate(std::string_view prefix) {
+    DLOG(INFO) << "backdate; prefix: " << string(prefix);
     if (!accessor->Reset()) {
-      LOG(WARNING) << "backdating failed for '" << prefix << "'.";
+      LOG(WARNING) << "backdating failed for '" << string(prefix) << "'.";
       return false;
     }
     return NextEntry();
@@ -229,16 +234,16 @@ bool UserDictionary::readonly() const {
 
 void UserDictionary::DfsLookup(const SyllableGraph& syll_graph,
                                size_t current_pos,
-                               const string& current_prefix,
+                               size_t current_prefix_length,
                                DfsState* state) {
   auto index = syll_graph.indices.find(current_pos);
   if (index == syll_graph.indices.end()) {
     return;
   }
   DLOG(INFO) << "dfs lookup starts from " << current_pos;
-  string prefix;
   for (const auto& spelling : index->second) {
-    DLOG(INFO) << "prefix: '" << current_prefix << "'"
+    DLOG(INFO) << "prefix: '"
+               << string(state->prefix.data(), current_prefix_length) << "'"
                << ", syll_id: " << spelling.first
                << ", num_spellings: " << spelling.second.size();
     state->code.push_back(spelling.first);
@@ -246,8 +251,15 @@ void UserDictionary::DfsLookup(const SyllableGraph& syll_graph,
       state->code.pop_back();
     });
 
-    if (!TranslateCodeToString(state->code, &prefix))
+    size_t prefix_base = state->prefix.size();
+    if (!AppendSyllableToString(spelling.first, &state->prefix)) {
+      state->prefix.resize(prefix_base);
       continue;
+    }
+    size_t prefix_length = state->prefix.size();
+    auto current_prefix = [&]() -> std::string_view {
+      return std::string_view(state->prefix.data(), prefix_length);
+    };
     for (size_t i = 0; i < spelling.second.size(); ++i) {
       auto props = spelling.second[i];
       if (i > 0 && props->type >= kAbbreviation)
@@ -267,13 +279,15 @@ void UserDictionary::DfsLookup(const SyllableGraph& syll_graph,
       });
 
       DLOG(INFO) << "edge: [" << current_pos << ", " << end_pos << ")";
-      if (prefix != state->key) {  // 'a b c |d ' > 'a b c \tabracadabra'
-        DLOG(INFO) << "forward scanning for '" << prefix << "'.";
-        if (!state->ForwardScan(prefix))  // reached the end of db
+      if (current_prefix() != state->key) {
+        // 'a b c |d ' > 'a b c \tabracadabra'
+        DLOG(INFO) << "forward scanning for '" << string(current_prefix())
+                   << "'.";
+        if (!state->ForwardScan(current_prefix()))  // reached the end of db
           continue;
       }
-      while (state->IsExactMatch(prefix)) {  // 'b |e ' vs. 'b e \tBe'
-        DLOG(INFO) << "match found for '" << prefix << "'.";
+      while (state->IsExactMatch(current_prefix())) {  // 'b |e ' vs. 'b e \tBe'
+        DLOG(INFO) << "match found for '" << string(current_prefix()) << "'.";
         state->RecruitEntry(end_pos);
         if (!state->NextEntry())  // reached the end of db
           break;
@@ -283,8 +297,9 @@ void UserDictionary::DfsLookup(const SyllableGraph& syll_graph,
         // reached the end of input, predict word if requested
         if (state->predict_word_from_depth != 0 &&
             state->depth() >= state->predict_word_from_depth) {
-          while (state->IsPrefixMatch(prefix)) {
-            DLOG(INFO) << "prefix match found for '" << prefix << "'.";
+          while (state->IsPrefixMatch(current_prefix())) {
+            DLOG(INFO) << "prefix match found for '"
+                       << string(current_prefix()) << "'.";
             if (syllabary_.empty()) {
               Syllabary syllabary;
               if (!table_->GetSyllabary(&syllabary)) {
@@ -305,14 +320,20 @@ void UserDictionary::DfsLookup(const SyllableGraph& syll_graph,
       } else {
         // the caller can limit the number of syllables to look up
         if ((!state->depth_limit || state->depth() < state->depth_limit) &&
-            state->IsPrefixMatch(prefix)) {  // 'b |e ' vs. 'b e f \tBefore'
-          DfsLookup(syll_graph, end_pos, prefix, state);
+            state->IsPrefixMatch(current_prefix())) {
+          // 'b |e ' vs. 'b e f \tBefore'
+          DfsLookup(syll_graph, end_pos, prefix_length, state);
         }
       }
     }
-    if (!state->IsPrefixMatch(current_prefix))  // 'b |' vs. 'g o \tGo'
+    if (!state->IsPrefixMatch(
+            std::string_view(state->prefix.data(), current_prefix_length))) {
+      // 'b |' vs. 'g o \tGo'
+      state->prefix.resize(prefix_base);
       return;
+    }
     // 'b |e ' vs. 'b y \tBy'
+    state->prefix.resize(prefix_base);
   }
 }
 
@@ -343,8 +364,7 @@ an<UserDictEntryCollector> UserDictionary::Lookup(
   state.quality_len.push_back(0.0);
   state.accessor = db_->Query("");
   state.accessor->Jump(" ");  // skip metadata
-  string prefix;
-  DfsLookup(syll_graph, start_pos, prefix, &state);
+  DfsLookup(syll_graph, start_pos, 0, &state);
   if (state.query_result.empty())
     return nullptr;
   // sort each group of homophones by weight
@@ -523,22 +543,34 @@ bool UserDictionary::CommitPendingTransaction() {
   return false;
 }
 
+bool UserDictionary::AppendSyllableToString(SyllableId syllable_id,
+                                            string* result) {
+  if (!table_ || !result) {
+    return false;
+  }
+  auto it = rev_syllabary_.find(syllable_id);
+  if (it == rev_syllabary_.end()) {
+    string spelling = table_->GetSyllableById(syllable_id);
+    if (spelling.empty()) {
+      LOG(ERROR) << "Error translating syllable_id '" << syllable_id << "'.";
+      return false;
+    }
+    it = rev_syllabary_.emplace(syllable_id, std::move(spelling)).first;
+  }
+  result->append(it->second);
+  result->push_back(' ');
+  return true;
+}
+
 bool UserDictionary::TranslateCodeToString(const Code& code, string* result) {
   if (!table_ || !result)
     return false;
   result->clear();
   for (const SyllableId& syllable_id : code) {
-    string spelling = rev_syllabary_.count(syllable_id)
-                          ? rev_syllabary_[syllable_id]
-                          : (rev_syllabary_[syllable_id] =
-                                 table_->GetSyllableById(syllable_id));
-    if (spelling.empty()) {
-      LOG(ERROR) << "Error translating syllable_id '" << syllable_id << "'.";
+    if (!AppendSyllableToString(syllable_id, result)) {
       result->clear();
       return false;
     }
-    *result += spelling;
-    *result += ' ';
   }
   return true;
 }
@@ -586,17 +618,18 @@ UserDictionaryComponent::UserDictionaryComponent() {}
 
 UserDictionary* UserDictionaryComponent::Create(const string& dict_name,
                                                 const string& db_class) {
-  auto db = db_pool_[dict_name].lock();
-  if (!db) {
+  an<Db> pooled_db = db_pool_[dict_name].lock();
+  if (!pooled_db) {
     auto component = Db::Require(db_class);
     if (!component) {
       LOG(ERROR) << "undefined db class '" << db_class << "'.";
+      db_pool_.erase(dict_name);
       return NULL;
     }
-    db.reset(component->Create(dict_name));
-    db_pool_[dict_name] = db;
+    pooled_db.reset(component->Create(dict_name));
+    db_pool_[dict_name] = pooled_db;
   }
-  return new UserDictionary(dict_name, db);
+  return new UserDictionary(dict_name, pooled_db);
 }
 
 UserDictionary* UserDictionaryComponent::Create(const Ticket& ticket) {

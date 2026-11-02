@@ -22,7 +22,7 @@ class CalculatorTranslator : public Translator {
  // --- 新增：自定义短语功能 ---
   void LoadSnippets();
   std::string ReplaceNewline(const std::string& str);
-  std::map<std::string, std::string> snippets_; // 用于在内存中缓存短语
+  std::multimap<std::string, std::string> snippets_; // 用于在内存中缓存短语
  
  // 日期相关
 void AppendDateCandidates(an<FifoTranslation> translation, const Segment& segment);

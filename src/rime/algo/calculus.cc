@@ -114,7 +114,7 @@ Calculation* Transformation::Parse(const vector<string>& args) {
   if (left.empty())
     return nullptr;
   the<Transformation> x(new Transformation);
-  x->pattern_ = std::regex(left);
+  x->pattern_ = std::regex(left, std::regex::optimize);
   x->replacement_.assign(right);
   return x.release();
 }
@@ -139,7 +139,7 @@ Calculation* Erasion::Parse(const vector<string>& args) {
   if (pattern.empty())
     return nullptr;
   the<Erasion> x(new Erasion);
-  x->pattern_ = std::regex(pattern);
+  x->pattern_ = std::regex(pattern, std::regex::optimize);
   return x.release();
 }
 
@@ -169,21 +169,21 @@ Calculation* Derivation::Parse(const vector<string>& args) {
     // 糾錯
     if (tag == "correction") {
       the<Correction> x(new Correction);
-      x->pattern_ = std::regex(left);
+      x->pattern_ = std::regex(left, std::regex::optimize);
       x->replacement_.assign(right);
       return x.release();
     }
     // 簡拼
     if (tag == "abbrev") {
       the<Abbreviation> x(new Abbreviation);
-      x->pattern_ = std::regex(left);
+      x->pattern_ = std::regex(left, std::regex::optimize);
       x->replacement_.assign(right);
       return x.release();
     }
     // 模糊音
     if (tag == "fuzz") {
       the<Fuzzing> x(new Fuzzing);
-      x->pattern_ = std::regex(left);
+      x->pattern_ = std::regex(left, std::regex::optimize);
       x->replacement_.assign(right);
       return x.release();
     }
@@ -191,7 +191,7 @@ Calculation* Derivation::Parse(const vector<string>& args) {
   }
 
   the<Derivation> x(new Derivation);
-  x->pattern_ = std::regex(left);
+  x->pattern_ = std::regex(left, std::regex::optimize);
   x->replacement_.assign(right);
   return x.release();
 }
@@ -206,7 +206,7 @@ Calculation* Fuzzing::Parse(const vector<string>& args) {
   if (left.empty())
     return nullptr;
   the<Fuzzing> x(new Fuzzing);
-  x->pattern_ = std::regex(left);
+  x->pattern_ = std::regex(left, std::regex::optimize);
   x->replacement_.assign(right);
   return x.release();
 }
@@ -230,7 +230,7 @@ Calculation* Abbreviation::Parse(const vector<string>& args) {
   if (left.empty())
     return nullptr;
   the<Abbreviation> x(new Abbreviation);
-  x->pattern_ = std::regex(left);
+  x->pattern_ = std::regex(left, std::regex::optimize);
   x->replacement_.assign(right);
   return x.release();
 }

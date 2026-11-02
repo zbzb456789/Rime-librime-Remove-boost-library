@@ -80,7 +80,14 @@ class Prism : public MappedFile {
   RIME_DLL bool HasKey(const string& key);
   RIME_DLL bool GetValue(const string& key, int* value) const;
   RIME_DLL void CommonPrefixSearch(const string& key, vector<Match>* result);
+  RIME_DLL void CommonPrefixSearch(const char* key,
+                                   size_t length,
+                                   vector<Match>* result);
   RIME_DLL void ExpandSearch(const string& key,
+                             vector<Match>* result,
+                             size_t limit);
+  RIME_DLL void ExpandSearch(const char* key,
+                             size_t length,
                              vector<Match>* result,
                              size_t limit);
   SpellingAccessor QuerySpelling(SyllableId spelling_id);

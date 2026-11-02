@@ -15,8 +15,8 @@ static const char* kTransformation = "xform/^([zcs])h(.*)$/$1$2/";
 
 static const int kNumOfInstructions = 5;
 static const char* kInstructions[kNumOfInstructions] = {
-    "xform/^(\\l+)\\d$/$1/",       "erase/^[wxy].*$/",
-    "derive/^([zcs])h(.*)$/$1$2/", "abbrev/^(\\l).+$/$1/",
+    "xform/^([a-z]+)\\d$/$1/",     "erase/^[wxy].*$/",
+    "derive/^([zcs])h(.*)$/$1$2/", "abbrev/^([a-z]).+$/$1/",
     "abbrev/^([zcs]h).+$/$1/",
 };
 

@@ -36,6 +36,10 @@ int Syllabifier::BuildSyllableGraph(const string& input,
   size_t farthest = 0;
   VertexQueue queue;
   queue.push(Vertex{0, kNormalSpelling});  // start
+  vector<Prism::Match> matches;
+  matches.reserve(input.length());
+  set<SyllableId> exact_match_syllables;
+  Corrections corrections;
 
   while (!queue.empty()) {
     Vertex vertex(queue.top());
@@ -56,16 +60,18 @@ int Syllabifier::BuildSyllableGraph(const string& input,
     DLOG(INFO) << "current_pos: " << current_pos;
 
     // see where we can go by advancing a syllable
-    vector<Prism::Match> matches;
-    set<SyllableId> exact_match_syllables;
-    auto current_input = input.substr(current_pos);
-    prism.CommonPrefixSearch(current_input, &matches);
+    matches.clear();
+    exact_match_syllables.clear();
+    const char* current_input = input.c_str() + current_pos;
+    size_t current_length = input.length() - current_pos;
+    prism.CommonPrefixSearch(current_input, current_length, &matches);
     if (corrector_) {
       for (auto& m : matches) {
         exact_match_syllables.insert(m.value);
       }
-      Corrections corrections;
-      corrector_->ToleranceSearch(prism, current_input, &corrections, 5);
+      corrections.clear();
+      corrector_->ToleranceSearch(prism, string(current_input, current_length),
+                                  &corrections, 5);
       for (const auto& m : corrections) {
         for (auto accessor = prism.QuerySpelling(m.first);
              !accessor.exhausted(); accessor.Next()) {
@@ -194,7 +200,8 @@ int Syllabifier::BuildSyllableGraph(const string& input,
     DLOG(INFO) << "completion enabled";
     const size_t kExpandSearchLimit = 512;
     vector<Prism::Match> keys;
-    prism.ExpandSearch(input.substr(farthest), &keys, kExpandSearchLimit);
+    prism.ExpandSearch(input.c_str() + farthest, input.length() - farthest,
+                       &keys, kExpandSearchLimit);
     if (!keys.empty()) {
       size_t current_pos = farthest;
       size_t end_pos = input.length();

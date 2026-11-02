@@ -42,9 +42,8 @@ class Opencc {
       // opencc accepts file path encoded in UTF-8.
       converter_ = config.NewFromFile(config_path_.u8string());
 
-      const list<opencc::ConversionPtr> conversions =
-          converter_->GetConversionChain()->GetConversions();
-      dict_ = conversions.front()->GetDict();
+      conversions_ = converter_->GetConversionChain()->GetConversions();
+      dict_ = conversions_.empty() ? nullptr : conversions_.front()->GetDict();
     } catch (...) {
       LOG(ERROR) << "opencc config not found: " << config_path_;
     }
@@ -52,14 +51,20 @@ class Opencc {
 
   bool ConvertWord(const string& text, vector<string>* forms) {
     Initialize();
-    if (converter_ == nullptr) {
+    if (converter_ == nullptr || !forms) {
       return false;
     }
-    const list<opencc::ConversionPtr> conversions =
-        converter_->GetConversionChain()->GetConversions();
+    auto cached = word_cache_.find(text);
+    if (cached != word_cache_.end()) {
+      if (cached->second.empty()) {
+        return false;
+      }
+      *forms = cached->second;
+      return true;
+    }
     vector<string> original_words{text};
     bool matched = false;
-    for (auto conversion : conversions) {
+    for (const auto& conversion : conversions_) {
       opencc::DictPtr dict = conversion->GetDict();
       if (dict == nullptr) {
         return false;
@@ -73,21 +78,22 @@ class Opencc {
           // There is no exact match, but still need to convert partially
           // matched in a chain conversion. Here apply default (max. seg.)
           // match to get the most probable conversion result
-          std::ostringstream buffer;
+          string buffer;
+          buffer.reserve(original_word.size());
           for (const char* wstr = original_word.c_str(); *wstr != '\0';) {
             opencc::Optional<const opencc::DictEntry*> matched =
                 dict->MatchPrefix(wstr);
             size_t matched_length;
             if (matched.IsNull()) {
               matched_length = opencc::UTF8Util::NextCharLength(wstr);
-              buffer << opencc::UTF8Util::FromSubstr(wstr, matched_length);
+              buffer += opencc::UTF8Util::FromSubstr(wstr, matched_length);
             } else {
               matched_length = matched.Get()->KeyLength();
-              buffer << matched.Get()->GetDefault();
+              buffer += matched.Get()->GetDefault();
             }
             wstr += matched_length;
           }
-          const string& converted_word = buffer.str();
+          const string& converted_word = buffer;
           // Even if current dictionary doesn't convert the word
           // (converted_word == original_word), we still need to keep it for
           // subsequent dicts in the chain. e.g. s2t.json expands 里 to 里 and
@@ -109,40 +115,45 @@ class Opencc {
     }
     if (!matched) {
       // No dictionary contains the word
+      word_cache_.emplace(text, vector<string>());
       return false;
     }
+    if (original_words.empty()) {
+      word_cache_.emplace(text, vector<string>());
+      return false;
+    }
+    word_cache_.emplace(text, original_words);
     *forms = std::move(original_words);
-    return forms->size() > 0;
+    return true;
   }
 
   bool RandomConvertText(const string& text, string* simplified) {
     Initialize();
     if (dict_ == nullptr)
       return false;
-    const list<opencc::ConversionPtr> conversions =
-        converter_->GetConversionChain()->GetConversions();
     const char* phrase = text.c_str();
-    for (auto conversion : conversions) {
+    for (const auto& conversion : conversions_) {
       opencc::DictPtr dict = conversion->GetDict();
       if (dict == nullptr) {
         return false;
       }
-      std::ostringstream buffer;
+      string buffer;
+      buffer.reserve(text.size());
       for (const char* pstr = phrase; *pstr != '\0';) {
         opencc::Optional<const opencc::DictEntry*> matched =
             dict->MatchPrefix(pstr);
         size_t matched_length;
         if (matched.IsNull()) {
           matched_length = opencc::UTF8Util::NextCharLength(pstr);
-          buffer << opencc::UTF8Util::FromSubstr(pstr, matched_length);
+          buffer += opencc::UTF8Util::FromSubstr(pstr, matched_length);
         } else {
           matched_length = matched.Get()->KeyLength();
           size_t i = rand() % (matched.Get()->NumValues());
-          buffer << matched.Get()->Values().at(i);
+          buffer += matched.Get()->Values().at(i);
         }
         pstr += matched_length;
       }
-      *simplified = buffer.str();
+      *simplified = buffer;
       phrase = simplified->c_str();
     }
     return *simplified != text;
@@ -161,6 +172,8 @@ class Opencc {
   path config_path_;
   opencc::ConverterPtr converter_;
   opencc::DictPtr dict_;
+  list<opencc::ConversionPtr> conversions_;
+  hash_map<string, vector<string>> word_cache_;
 };
 
 // Simplifier

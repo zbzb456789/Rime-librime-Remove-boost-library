@@ -22,7 +22,7 @@ bool Patterns::Load(an<ConfigList> patterns) {
     return false;
   for (auto it = patterns->begin(); it != patterns->end(); ++it) {
     if (auto value = As<ConfigValue>(*it)) {
-      push_back(std::regex(value->str()));
+      push_back(std::regex(value->str(), std::regex::optimize));
     }
   }
   return true;
@@ -122,6 +122,8 @@ TranslatorOptions::TranslatorOptions(const Ticket& ticket) {
                     &contextual_suggestions_);
     config->GetBool(ticket.name_space + "/enable_completion",
                     &enable_completion_);
+    config->GetBool(ticket.name_space + "/enable_user_dict_learning",
+                    &enable_user_dict_learning_);
     config->GetBool(ticket.name_space + "/strict_spelling", &strict_spelling_);
     config->GetDouble(ticket.name_space + "/initial_quality",
                       &initial_quality_);

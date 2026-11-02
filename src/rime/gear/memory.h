@@ -51,6 +51,10 @@ class Memory {
   const Language* language() const { return language_.get(); }
 
  protected:
+  // 关掉之后用户词典仍然参与候选查询，但不再把选中的词写回词典，
+  // 也就是关掉「自动调频」：候选顺序不会随使用次数漂移。
+  void set_learn_user_dict(bool enabled) { learn_user_dict_ = enabled; }
+
   void OnCommit(Context* ctx);
   void OnDeleteEntry(Context* ctx);
   void OnUnhandledKey(Context* ctx, const KeyEvent& key);
@@ -60,6 +64,7 @@ class Memory {
   the<Language> language_;
 
  private:
+  bool learn_user_dict_ = true;
   connection commit_connection_;
   connection delete_connection_;
   connection unhandled_key_connection_;

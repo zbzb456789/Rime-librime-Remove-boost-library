@@ -228,22 +228,24 @@ if (input == "jieq") {
 
 
 
-// =============================
-    // 新增：自定义短语匹配
     // =============================
-    auto it = snippets_.find(input);
-    if (it != snippets_.end()) {
+    // 新增：自定义短语匹配 (支持一码多词)
+    // =============================
+    auto range = snippets_.equal_range(input);
+    if (range.first != range.second) {
         auto translation = New<FifoTranslation>();
         
-        // 使用你统一的 "calculator" 候选词类型
-        auto cand = New<SimpleCandidate>(
-            "calculator", 
-            segment.start, 
-            segment.end, 
-            it->second
-        );
-        cand->set_comment("〈短语〉");
-        translation->Append(cand);
+        // 遍历所有匹配的候选短语
+        for (auto it = range.first; it != range.second; ++it) {
+            auto cand = New<SimpleCandidate>(
+                "calculator", 
+                segment.start, 
+                segment.end, 
+                it->second
+            );
+            cand->set_comment("〈短语〉");
+            translation->Append(cand);
+        }
         
         // 匹配到了短语就直接返回，不再往下走数学计算
         return translation;
@@ -766,7 +768,8 @@ void CalculatorTranslator::LoadSnippets() {
     if (tab_pos != std::string::npos && tab_pos > 0) {
       std::string key = line.substr(0, tab_pos);
       std::string val = line.substr(tab_pos + 1);
-      snippets_[key] = ReplaceNewline(val); // 存入内存
+      // 使用 insert 允许多个相同编码插入
+      snippets_.insert({key, ReplaceNewline(val)}); 
     }
   }
   fin.close();

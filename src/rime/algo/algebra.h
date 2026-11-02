@@ -36,6 +36,7 @@ class Projection {
 
  protected:
   vector<of<Calculation>> calculation_;
+  hash_map<string, pair<bool, string>> apply_cache_;
 };
 
 }  // namespace rime

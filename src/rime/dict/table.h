@@ -8,6 +8,7 @@
 #ifndef RIME_TABLE_H_
 #define RIME_TABLE_H_
 
+#include <array>
 #include <cstring>
 #include <rime/common.h>
 #include <rime/dict/mapped_file.h>
@@ -165,19 +166,19 @@ class TableQuery {
   size_t level() const { return level_; }
 
   double credibility_sum() const {
-    return credibility_.empty() ? 0 : credibility_.back();
+    return level_ == 0 ? 0 : credibility_[level_ - 1];
   }
   double quality_len_sum() const {
-    return quality_len_.empty() ? 0 : quality_len_.back();
+    return level_ == 0 ? 0 : quality_len_[level_ - 1];
   }
-  size_t last_pos() const { return last_pos_.empty() ? 0 : last_pos_.back(); }
+  size_t last_pos() const { return level_ == 0 ? 0 : last_pos_[level_ - 1]; }
 
  protected:
   size_t level_ = 0;
-  Code index_code_;
-  vector<double> credibility_;
-  vector<double> quality_len_;
-  vector<size_t> last_pos_;
+  std::array<SyllableId, Code::kIndexCodeMaxLength> syllable_ids_{};
+  std::array<double, Code::kIndexCodeMaxLength> credibility_{};
+  std::array<double, Code::kIndexCodeMaxLength> quality_len_{};
+  std::array<size_t, Code::kIndexCodeMaxLength> last_pos_{};
 
  private:
   bool Walk(SyllableId syllable_id);

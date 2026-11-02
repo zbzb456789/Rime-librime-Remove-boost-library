@@ -65,7 +65,7 @@ ProcessResult Switcher::ProcessKeyEvent(const KeyEvent& key_event) {
 		TCHAR szPath[MAX_PATH];
 		if (GetModuleFileName(NULL, szPath, MAX_PATH)) {
 			PathRemoveFileSpec(szPath);
-			PathAppend(szPath, _T("WeaselSettings.exe"));
+			PathAppend(szPath, _T("RimeUISettings.exe"));
 
 			if (PathFileExists(szPath)) {
 				SHELLEXECUTEINFO shExInfo = {0};

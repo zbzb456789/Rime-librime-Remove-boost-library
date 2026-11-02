@@ -96,7 +96,8 @@ bool TableEncoder::LoadSettings(Config* config) {
       auto pattern = As<ConfigValue>(*it);
       if (!pattern)
         continue;
-      exclude_patterns_.push_back(std::regex(pattern->str()));
+      exclude_patterns_.push_back(
+          std::regex(pattern->str(), std::regex::optimize));
     }
   }
   config->GetString("encoder/tail_anchor", &tail_anchor_);

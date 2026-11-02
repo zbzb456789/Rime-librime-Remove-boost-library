@@ -7,6 +7,7 @@
 #ifndef RIME_DB_H_
 #define RIME_DB_H_
 
+#include <string_view>
 #include <rime_api.h>
 #include <rime/common.h>
 #include <rime/component.h>
@@ -21,6 +22,7 @@ class DbAccessor {
 
   virtual bool Reset() = 0;
   virtual bool Jump(const string& key) = 0;
+  virtual bool JumpView(std::string_view key) { return Jump(string(key)); }
   virtual bool GetNextRecord(string* key, string* value) = 0;
   virtual bool exhausted() = 0;
 

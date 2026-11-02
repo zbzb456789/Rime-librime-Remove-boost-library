@@ -235,7 +235,11 @@ an<Candidate> PrefetchTranslation::Peek() {
   if (!cache_.empty() || Replenish()) {
     return cache_.front();
   } else {
-    return translation_->Peek();
+    auto next = translation_->Peek();
+    if (!next && translation_->exhausted()) {
+      set_exhausted(true);
+    }
+    return next;
   }
 }
 

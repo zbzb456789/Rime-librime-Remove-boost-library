@@ -270,25 +270,42 @@ bool Prism::GetValue(const string& key, int* value) const {
 // Given a key, search all the keys in the tree that share
 // a common prefix with that key.
 void Prism::CommonPrefixSearch(const string& key, vector<Match>* result) {
-  if (!result || key.empty())
+  CommonPrefixSearch(key.c_str(), key.length(), result);
+}
+
+void Prism::CommonPrefixSearch(const char* key,
+                               size_t length,
+                               vector<Match>* result) {
+  if (!result || !key || length == 0)
     return;
-  size_t len = key.length();
-  result->resize(len);
+  if (result->capacity() < length) {
+    result->reserve(length);
+  }
+  result->resize(length);
   size_t num_results =
-      trie_->commonPrefixSearch(key.c_str(), &result->front(), len, len);
+      trie_->commonPrefixSearch(key, &result->front(), length, length);
   result->resize(num_results);
 }
 
 void Prism::ExpandSearch(const string& key,
                          vector<Match>* result,
                          size_t limit) {
+  ExpandSearch(key.c_str(), key.length(), result, limit);
+}
+
+void Prism::ExpandSearch(const char* key,
+                         size_t length,
+                         vector<Match>* result,
+                         size_t limit) {
   if (!result)
+    return;
+  if (!key || length == 0)
     return;
   result->clear();
   size_t count = 0;
   size_t node_pos = 0;
   size_t key_pos = 0;
-  int ret = trie_->traverse(key.c_str(), node_pos, key_pos);
+  int ret = trie_->traverse(key, node_pos, key_pos);
   // key is not a valid path
   if (ret == -2)
     return;
@@ -298,23 +315,26 @@ void Prism::ExpandSearch(const string& key,
       return;
   }
   std::queue<node_t> q;
-  q.push({key, node_pos});
+  q.push({string(key), node_pos});
   while (!q.empty()) {
-    node_t node = q.front();
+    node_t node = std::move(q.front());
     q.pop();
     const char* c =
         (format_ > 1.0 - DBL_EPSILON) ? metadata_->alphabet : kDefaultAlphabet;
     for (; *c; ++c) {
-      string k = node.key + *c;
+      string k;
+      k.reserve(node.key.size() + 1);
+      k.assign(node.key);
+      k.push_back(*c);
       size_t k_pos = node.key.length();
       size_t n_pos = node.node_pos;
       ret = trie_->traverse(k.c_str(), n_pos, k_pos);
       if (ret <= -2) {
         // ignore
       } else if (ret == -1) {
-        q.push({k, n_pos});
+        q.push({std::move(k), n_pos});
       } else {
-        q.push({k, n_pos});
+        q.push({std::move(k), n_pos});
         result->push_back(Match{ret, k_pos});
         if (limit && ++count >= limit)
           return;

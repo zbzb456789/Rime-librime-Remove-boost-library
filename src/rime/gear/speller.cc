@@ -82,7 +82,8 @@ Speller::Speller(const Ticket& ticket)
     string pattern;
 	if (config->GetString(ticket.name_space + "/auto_select_pattern", &auto_select_pattern_str_)) {
 	  try {
-		auto_select_pattern_ = std::regex(auto_select_pattern_str_);
+		auto_select_pattern_ =
+		    std::regex(auto_select_pattern_str_, std::regex::optimize);
 	  } catch (const std::regex_error& e) {
 		LOG(ERROR) << "Error parsing auto_select_pattern: " << e.what();
 		auto_select_pattern_str_.clear(); // 解析失败则清空字符串

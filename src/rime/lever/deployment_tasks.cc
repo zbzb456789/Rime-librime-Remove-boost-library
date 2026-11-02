@@ -25,6 +25,7 @@
 #include <rime/dict/dict_compiler.h>
 #include <rime/lever/deployment_tasks.h>
 #include <rime/lever/user_dict_manager.h>
+#include "build_manifest.h"
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -225,6 +226,9 @@ bool WorkspaceUpdate::Run(Deployer* deployer) {
   LOG(INFO) << "updating schemas.";
   int success = 0;
   int failure = 0;
+  int skipped = 0;
+  BuildManifest manifest(deployer);
+  manifest.Load();
   map<string, path> schemas;
   the<ResourceResolver> resolver(Service::instance().CreateResourceResolver(
       {"schema_source_file", "", ".schema.yaml"}));
@@ -249,7 +253,15 @@ bool WorkspaceUpdate::Run(Deployer* deployer) {
       }
       return;
     }
-    the<DeploymentTask> t(new SchemaUpdate(schema_path));
+    if (manifest.IsSchemaUpToDate(schema_id, schema_path)) {
+      LOG(INFO) << "schema '" << schema_id
+                << "' is up to date; skipping build.";
+      ++skipped;
+      return;
+    }
+    the<SchemaUpdate> t(new SchemaUpdate(schema_path));
+    t->set_manifest(&manifest);
+    t->set_force_config_update(true);
     if (t->Run(deployer))
       ++success;
     else
@@ -279,8 +291,9 @@ bool WorkspaceUpdate::Run(Deployer* deployer) {
       }
     }
   }
+  manifest.Save();
   LOG(INFO) << "finished updating schemas: " << success << " success, "
-            << failure << " failure.";
+            << failure << " failure, " << skipped << " skipped.";
 
   the<Config> user_config(Config::Require("user_config")->Create("user"));
   // TODO: store as 64-bit number to avoid the year 2038 problem
@@ -374,16 +387,29 @@ bool SchemaUpdate::Run(Deployer* deployer) {
     return false;
   }
 
-  the<DeploymentTask> config_file_update(
+  the<ConfigFileUpdate> config_file_update(
       new ConfigFileUpdate(schema_id + ".schema.yaml", "schema/version"));
+  config_file_update->set_force_rebuild(force_config_update_);
   if (!config_file_update->Run(deployer)) {
     return false;
   }
   // reload compiled config
   config.reset(Config::Require("schema")->Create(schema_id));
+  if (!config) {
+    LOG(ERROR) << "Error reloading compiled schema '" << schema_id << "'.";
+    return false;
+  }
+  the<ResourceResolver> resolver(
+      Service::instance().CreateDeployedResourceResolver(
+          {"compiled_schema", "", ".schema.yaml"}));
+  auto compiled_schema = resolver->ResolvePath(schema_id);
   string dict_name;
   if (!config->GetString("translator/dictionary", &dict_name)) {
     // not requiring a dictionary
+    if (manifest_) {
+      manifest_->RecordSchema(schema_id, source_path_, compiled_schema, nullptr,
+                              nullptr);
+    }
     return true;
   }
   Schema schema(schema_id, config.release());
@@ -403,13 +429,13 @@ bool SchemaUpdate::Run(Deployer* deployer) {
   if (verbose_) {
     dict_compiler.set_options(DictCompiler::kRebuild | DictCompiler::kDump);
   }
-  the<ResourceResolver> resolver(
-      Service::instance().CreateDeployedResourceResolver(
-          {"compiled_schema", "", ".schema.yaml"}));
-  auto compiled_schema = resolver->ResolvePath(schema_id);
   if (!dict_compiler.Compile(compiled_schema)) {
     LOG(ERROR) << "dictionary '" << dict_name << "' failed to compile.";
     return false;
+  }
+  if (manifest_) {
+    manifest_->RecordSchema(schema_id, source_path_, compiled_schema,
+                            dict.get(), &dict_compiler);
   }
   LOG(INFO) << "dictionary '" << dict_name << "' is ready.";
   return true;
@@ -477,7 +503,7 @@ bool ConfigFileUpdate::Run(Deployer* deployer) {
   }
   // build the config file if needs update
   the<Config> config(Config::Require("config")->Create(file_name_));
-  if (ConfigNeedsUpdate(config.get())) {
+  if (force_rebuild_ || ConfigNeedsUpdate(config.get())) {
     if (!MaybeCreateDirectory(deployer->staging_dir)) {
       return false;
     }

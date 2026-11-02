@@ -3,29 +3,31 @@
 
 #include <rime/filter.h>
 #include <rime/candidate.h>
-#include <rime/context.h>        // 必须：识别 Context
-#include <rime/segmentation.h>   // 必须：识别 Segment
+#include <rime/context.h>
+#include <rime/segmentation.h>
 #include <rime/dict/reverse_lookup_dictionary.h>
 #include <unordered_map>
 #include <string>
+#include <string_view>
 #include <vector>
+#include <memory>
 
 namespace SpellingFilter {
 
 using namespace rime;
 
-// 数据条目结构
+// 优化：采用 shared_ptr 保留原生内存，各字段使用 string_view 零拷贝引用
 struct DbEntry {
-  std::string charset;
-  std::string spelling;
-  std::string code;
-  std::string pinyin;
-  std::string index;
+  std::shared_ptr<std::string> raw_buffer; 
+  std::string_view charset;
+  std::string_view spelling;
+  std::string_view code;
+  std::string_view pinyin;
+  std::string_view index;
 
   bool empty() const { return spelling.empty() && code.empty(); }
 };
 
-// 自定义候选词类：用于缓存读音，方便动态显示
 class SpellingCandidate : public ShadowCandidate {
  public:
   SpellingCandidate(const an<Candidate>& original, 
@@ -44,6 +46,7 @@ class SpellingCandidate : public ShadowCandidate {
 class SpellingFilter : public Filter {
  public:
   explicit SpellingFilter(const Ticket& ticket);
+  virtual ~SpellingFilter();
 
   virtual an<Translation> Apply(an<Translation> translation,
                                  CandidateList* candidates) override;
@@ -52,7 +55,6 @@ class SpellingFilter : public Filter {
   
   Engine* engine() const { return engine_; }
 
-  // 选项获取接口
   bool option_show_spelling() const { return show_spelling_; }
   bool option_show_code()     const { return show_code_; }
   bool option_show_index()    const { return show_index_; }
@@ -60,7 +62,6 @@ class SpellingFilter : public Filter {
   bool option_gb2312()        const { return gb2312_; }
   bool option_single_char()   const { return single_char_; }
 
-  // 核心：处理高亮变化的监听回调
   void OnContextUpdate(rime::Context* ctx);
 
  private:
@@ -71,7 +72,6 @@ class SpellingFilter : public Filter {
   an<ReverseDb> spll_rvdb_;
   std::unordered_map<std::string, DbEntry> unified_cache_;
 
-  // 监听连接对象
   connection update_connection_;
 
   bool show_spelling_ = false;
